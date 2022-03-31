@@ -32,7 +32,7 @@ describe('format()', function () {
         app.use(cookieParser());
         app.use(session({ secret: 'test' }));
 
-        app.get('/:param', (req, res) => {
+        app.get('/:param', (req, res, next) => {
             res.locals.v = 1;
             try { res.json(format(req, res)); } catch (err) { next(err); }
         });
