@@ -10,10 +10,12 @@ npm install express-logging-json
 A simple logging middleware example, with [on-finished](https://github.com/jshttp/on-finished) module:
 ```js
 const onFinished = require('on-finished');
-const { format } = require('express-logging-json');
+const format = require('express-logging-json');
 
 const options = {
-    mask: ['headers.authorization']
+    mask: {
+        fields: ['headers.authorization']
+    }
 };
 
 const app = express();
@@ -21,6 +23,7 @@ const app = express();
 app.use((req, res, next) => {
     onFinished(res, err => {
         const log = format(req, res, options);
+        log.err = err;
         console.info(log);
     });
     next();
