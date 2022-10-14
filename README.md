@@ -3,33 +3,26 @@ A JSON logging helper for Express
 
 ## Installation
 ```bash
-npm i express-logging-json
+npm install express-logging-json
 ```
 
 ## Usage
+A simple logging middleware example, with [on-finished](https://github.com/jshttp/on-finished) module:
 ```js
-const { format, mask } = require('express-logging-format');
+const onFinished = require('on-finished');
+const { format } = require('express-logging-json');
+
+const options = {
+    mask: ['headers.authorization']
+};
 
 const app = express();
 
-app.get('/', (req, res) => {
-
-    try {
-
-        res.sendStatus(204);
-
-        const log = format(req, res);
-
-        mask(log, ['headers.authorization', 'fields.password']);
-
-        console.log(log);
-
-        done();
-
-    } catch (err) {
-
-        done(err);
-
-    }
+app.use((req, res, next) => {
+    onFinished(res, err => {
+        const log = format(req, res, options);
+        console.info(log);
+    });
+    next();
 });
 ```
