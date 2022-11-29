@@ -26,7 +26,7 @@ declare function ExpressLoggingJson(req: express.Request, res: express.Response,
 
 declare namespace ExpressLoggingJson {
     function format(req: express.Request, res: express.Response, options?: LogOptions): Log;
-    function mask(obj: object, fields: string[], options?: MaskOptions): object;
+    function mask(obj: object, fields: string[], options?: MaskOptions): void;
 }
 
 export = ExpressLoggingJson;
