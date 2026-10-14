@@ -170,6 +170,56 @@ describe('redact()', function () {
         });
     });
 
+    describe('omit', function () {
+        const log = {
+            method: 'GET',
+            headers: { accept: 'x', 'accept-language': 'ja', 'sec-ch-ua': 'a', 'sec-fetch-mode': 'b', host: 'h' },
+            responseHeaders: { 'content-type': 'text/html' },
+            items: [{ id: 1, note: 'n' }, { id: 2, note: 'm' }],
+            trailers: {}
+        };
+
+        it('should leave out top-level keys', function () {
+            const out = redact(log, { omit: ['trailers', 'responseHeaders'] });
+            assert.deepStrictEqual(Object.keys(out), ['method', 'headers', 'items']);
+        });
+
+        it('should leave out nested paths', function () {
+            const out = redact(log, { omit: ['headers.accept', 'headers.accept-language'] });
+            assert.deepStrictEqual(Object.keys(out.headers), ['sec-ch-ua', 'sec-fetch-mode', 'host']);
+        });
+
+        it('should leave out the paths a regular expression matches, even a global one', function () {
+            const out = redact(log, { omit: [/^headers\.sec-/g] });
+            assert.deepStrictEqual(Object.keys(out.headers), ['accept', 'accept-language', 'host']);
+        });
+
+        it('should treat the items of an array as having the path of the array', function () {
+            const out = redact(log, { omit: ['items.note'] });
+            assert.deepStrictEqual(out.items, [{ id: 1 }, { id: 2 }]);
+        });
+
+        it('should not match a prefix or part of a name', function () {
+            const out = redact(log, { omit: ['head', 'headers.acc', 'ers'] });
+            assert.deepStrictEqual(out, log);
+        });
+
+        it('should not change the original', function () {
+            const copy = JSON.parse(JSON.stringify(log));
+            redact(log, { omit: ['headers', 'items.note'] });
+            assert.deepStrictEqual(log, copy);
+        });
+
+        it('should not look inside what is left out, and mask the rest', function () {
+            const out = redact({ a: { password: 'x' }, b: { password: 'y' } }, { omit: ['a'], auto: true });
+            assert.deepStrictEqual(out, { b: { password: '[Filtered]' } });
+        });
+
+        it('should leave out nothing without paths', function () {
+            assert.deepStrictEqual(redact(log, { omit: [] }), log);
+        });
+    });
+
     describe('objects', function () {
         it('should survive circular references', function () {
             const o = { password: 'x', name: 'a' };

@@ -30,6 +30,21 @@ app.use((req, res, next) => {
 });
 ```
 
+## Leaving parts out
+A log refers to a lot of what a request carries, and an access log is written for every request. To log less, leave out what is not needed with `omit`: paths, or regular expressions tested against them.
+
+```js
+const options = {
+    omit: [
+        'trailers', // a top-level key
+        'headers.accept-language', // a path
+        /^headers\.sec-/ // everything a regular expression matches
+    ]
+};
+```
+
+Paths are dotted, as in `mask.fields`. The items of an array share the path of the array, so `items.note` leaves out `note` in every item. Like masking, it works on a copy and never changes the request. It can be combined with `mask`.
+
 ## Masking secrets
 A request log refers to everything a request carries: headers, cookies, session, query, body. Secrets in there are easy to miss, so masking can be done by path, by name or by what a value looks like. Masking works on a copy: the request, session and response are never changed.
 

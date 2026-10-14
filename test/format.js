@@ -194,3 +194,54 @@ describe('format() with mask', function () {
             .then(done, done);
     });
 });
+
+describe('format() with omit', function () {
+    function app (options) {
+        const instance = express();
+        instance.use(cookieParser());
+        instance.get('/', (req, res, next) => {
+            try {
+                res.json({ log: format(req, res, options), live: { headers: Object.keys(req.headers) } });
+            } catch (err) { next(err); }
+        });
+        return instance;
+    }
+
+    it('should leave out what it is told to, and leave the request alone', function (done) {
+        const omit = ['trailers', 'responseHeaders', 'headers.accept-language', /^headers\.x-/];
+        request(app({ omit }))
+            .get('/?q=1')
+            .set('Accept-Language', 'ja')
+            .set('X-One', '1')
+            .set('X-Two', '2')
+            .set('User-Agent', 'agent')
+            .expect(200)
+            .then(function (res) {
+                const { log, live } = res.body;
+                assert.strictEqual(log.trailers, undefined);
+                assert.strictEqual(log.responseHeaders, undefined);
+                assert.strictEqual(log.headers['accept-language'], undefined);
+                assert.strictEqual(log.headers['x-one'], undefined);
+                assert.strictEqual(log.headers['user-agent'], 'agent');
+                assert.strictEqual(log.url, '/?q=1');
+                assert.deepStrictEqual(log.query, { q: '1' });
+                // the request still has its headers
+                assert(['accept-language', 'x-one', 'x-two'].every(h => live.headers.includes(h)));
+            })
+            .then(done, done);
+    });
+
+    it('should combine with masking', function (done) {
+        request(app({ omit: ['headers.accept-language'], mask: { auto: true } }))
+            .get('/')
+            .set('Accept-Language', 'ja')
+            .set('Authorization', 'Bearer abcdefghijklmnop')
+            .expect(200)
+            .then(function (res) {
+                const { headers } = res.body.log;
+                assert.strictEqual(headers['accept-language'], undefined);
+                assert.strictEqual(headers.authorization, '[Filtered]');
+            })
+            .then(done, done);
+    });
+});

@@ -17,12 +17,22 @@ interface RedactOptions extends MaskOptions {
      * Strings (case insensitive) or regular expressions. Secret shapes inside them are still masked.
      */
     except?: Array<string | RegExp>;
+    /**
+     * Paths to leave out of the copy, such as 'headers.accept', or regular expressions tested against
+     * them, such as /^headers\.sec-/. The items of an array share the path of the array
+     */
+    omit?: Array<string | RegExp>;
 }
 
 interface LogOptions {
     maxBodyLen?: number;
+    /**
+     * Parts of the log to leave out, as paths ('trailers', 'headers.accept') or regular expressions tested
+     * against them. A log refers to a lot of what a request carries, and this is how to log less of it
+     */
+    omit?: Array<string | RegExp>;
     /** `fields` are paths such as 'headers.authorization'. Masking works on a copy, never on the request */
-    mask?: RedactOptions & { fields?: string[] };
+    mask?: Omit<RedactOptions, 'omit'> & { fields?: string[] };
 }
 
 type RequestKeys = 'ip' | 'ips' | 'hostname' | 'protocol' | 'method' | 'path' | 'fresh' | 'subdomains' | 'xhr' | 'headers' | 'trailers' | 'query' | 'params';
