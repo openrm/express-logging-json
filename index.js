@@ -106,6 +106,17 @@ function compile ({ keys = [], values = [], except = [], auto = false } = {}) {
     return { keyTests, patterns };
 }
 
+// A test of a path in the log, such as 'headers.accept': from strings (exact) and regular expressions
+function compileOmit (omit = []) {
+    if (!omit.length) return null;
+    const paths = new Set(omit.filter(path => typeof path === 'string'));
+    const patterns = omit.filter(path => path instanceof RegExp);
+    return (path) => paths.has(path) || patterns.some(pattern => {
+        pattern.lastIndex = 0;
+        return pattern.test(path);
+    });
+}
+
 function replacePatterns (string, patterns, placeholder) {
     for (const pattern of patterns) {
         pattern.lastIndex = 0;
@@ -134,14 +145,17 @@ const MAX_DEPTH = 30;
  * - `auto`: also use the names and shapes in `secrets`, which is what most secrets look like
  * - `except`: names (as in `keys`) that `auto` does not mask by name, for the ones that only look like
  *   secrets. Their values are still checked for secret shapes, and `keys` wins over `except`
+ * - `omit`: paths to leave out of the copy altogether, such as 'headers.accept', or regular expressions
+ *   tested against them. Paths are dotted, and the items of an array share the path of the array
  * - `placeholder`: what to replace with, '[Filtered]' by default
  */
 function redact (value, options = {}) {
     const { placeholder = PLACEHOLDER } = options;
     const { keyTests, patterns } = compile(options);
+    const omitted = compileOmit(options.omit);
     const seen = new WeakMap();
 
-    function walk (v, depth) {
+    function walk (v, depth, path) {
         if (typeof v === 'string') return patterns.length ? replacePatterns(v, patterns, placeholder) : v;
         if (v === null || typeof v !== 'object') return v;
         if (seen.has(v)) return seen.get(v);
@@ -151,7 +165,7 @@ function redact (value, options = {}) {
         if (Array.isArray(v)) {
             const copy = [];
             seen.set(v, copy);
-            for (const item of v) copy.push(walk(item, depth + 1));
+            for (const item of v) copy.push(walk(item, depth + 1, path));
             return copy;
         }
         // Buffers, dates, errors and the like are not containers of named values
@@ -159,18 +173,21 @@ function redact (value, options = {}) {
         // Honour toJSON, as what is logged will be serialised anyway (dates, ids, documents)
         if (typeof v.toJSON === 'function') {
             const json = v.toJSON();
-            if (json !== v) return walk(json, depth + 1);
+            if (json !== v) return walk(json, depth + 1, path);
         }
 
         const copy = {};
         seen.set(v, copy);
         for (const key of Object.keys(v)) {
-            copy[key] = keyTests.some(test => test(key, v[key])) ? placeholder : walk(v[key], depth + 1);
+            const keyPath = omitted ? (path ? `${path}.${key}` : key) : '';
+            if (omitted && omitted(keyPath)) continue;
+            copy[key] = keyTests.some(test => test(key, v[key])) ?
+                placeholder : walk(v[key], depth + 1, keyPath);
         }
         return copy;
     }
 
-    return walk(value, 0);
+    return walk(value, 0, '');
 }
 
 function format (req, res, options = {}) {
@@ -213,11 +230,11 @@ function format (req, res, options = {}) {
         // not serializable
     }
 
-    if (options.mask) {
-        const { fields, ...opts } = options.mask;
-        // `log` refers to the live request, response and session: work on a copy so that masking
-        // never changes them
-        const masked = redact(log, opts);
+    if (options.mask || options.omit) {
+        const { fields, ...opts } = options.mask || {};
+        // `log` refers to the live request, response and session: work on a copy so that masking and
+        // leaving parts out never change them
+        const masked = redact(log, { ...opts, omit: options.omit });
         mask(masked, fields, opts);
         return masked;
     }
