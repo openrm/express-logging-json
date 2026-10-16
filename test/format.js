@@ -117,3 +117,80 @@ describe('format()', function () {
             done);
     });
 });
+
+describe('format() with mask', function () {
+    function app (options, extra = (req) => req) {
+        const instance = express();
+        instance.use(cookieParser());
+        instance.get('/', (req, res, next) => {
+            try {
+                extra(req);
+                const log = format(req, res, options);
+                res.json({ log, live: { authorization: req.headers.authorization, cookies: req.cookies } });
+            } catch (err) { next(err); }
+        });
+        return instance;
+    }
+
+    it('should not change the live request when masking fields', function (done) {
+        request(app({ mask: { fields: ['headers.authorization', 'cookies.sid'] } }))
+            .get('/')
+            .set('Authorization', 'Bearer abc')
+            .set('Cookie', ['sid=1'])
+            .expect(200)
+            .then(function (res) {
+                assert.strictEqual(res.body.log.headers.authorization, '[Filtered]');
+                assert.strictEqual(res.body.log.cookies.sid, '[Filtered]');
+                assert.strictEqual(res.body.live.authorization, 'Bearer abc');
+                assert.deepStrictEqual(res.body.live.cookies, { sid: '1' });
+            })
+            .then(done, done);
+    });
+
+    it('should mask secrets without naming them, with auto', function (done) {
+        request(app({ mask: { auto: true } }))
+            .get('/?signature=abcdef123456&page=2')
+            .set('Authorization', 'Bearer abcdefghijklmnop')
+            .set('Cookie', ['session_id=s1; theme=dark'])
+            .expect(200)
+            .then(function (res) {
+                const { log, live } = res.body;
+                assert.strictEqual(log.headers.authorization, '[Filtered]');
+                assert.strictEqual(log.headers.cookie, '[Filtered]');
+                assert.strictEqual(log.cookies.session_id, '[Filtered]');
+                assert.strictEqual(log.cookies.theme, 'dark');
+                assert.strictEqual(log.query.signature, '[Filtered]');
+                assert.strictEqual(log.query.page, '2');
+                assert.strictEqual(log.url, '/?signature=[Filtered]&page=2');
+                assert.strictEqual(live.authorization, 'Bearer abcdefghijklmnop');
+            })
+            .then(done, done);
+    });
+
+    it('should leave the excepted headers alone with auto', function (done) {
+        request(app({ mask: { auto: true, except: [/^x-token-/i] } }))
+            .get('/')
+            .set('Authorization', 'Bearer abcdefghijklmnop')
+            .set('X-Token-User', '42')
+            .set('X-Token-Organization', '7')
+            .expect(200)
+            .then(function (res) {
+                const { headers } = res.body.log;
+                assert.strictEqual(headers.authorization, '[Filtered]');
+                assert.strictEqual(headers['x-token-user'], '42');
+                assert.strictEqual(headers['x-token-organization'], '7');
+            })
+            .then(done, done);
+    });
+
+    it('should leave the log as it was without the mask option', function (done) {
+        request(app({}))
+            .get('/')
+            .set('Authorization', 'Bearer abc')
+            .expect(200)
+            .then(function (res) {
+                assert.strictEqual(res.body.log.headers.authorization, 'Bearer abc');
+            })
+            .then(done, done);
+    });
+});
