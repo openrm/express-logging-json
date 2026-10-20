@@ -69,6 +69,8 @@ Only the secret part is replaced, so `Bearer [Filtered]` and `?signature=[Filter
 
 A name can sound secret and hold something harmless, such as an id in a `token-user` header. List those in `except` and `auto` leaves them alone by name. What is inside is still checked, so a real token in an excepted header is masked all the same. `keys` and `fields` take precedence over `except`.
 
+Masking never throws. A part that cannot be copied (a throwing getter or `toJSON`) is replaced by `[Unreadable]` or `[Unserializable]`, and if a log cannot be formatted at all, `format()` returns just the method, the url (masked), the status and a `formatError`, never what it could not mask. A log is written from callbacks where nobody would catch an error.
+
 Masking is a safety net, not a guarantee. A secret under an innocent name, in an unrecognisable shape, is not found.
 
 The same helpers can be used on other parts of a log, such as a text line:

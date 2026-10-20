@@ -136,6 +136,10 @@ function redactString (string, { placeholder = PLACEHOLDER, ...options } = {}) {
 
 const MAX_DEPTH = 30;
 
+// What stands for a part that could not be copied, as it must never be logged as it was
+const UNSERIALIZABLE = '[Unserializable]';
+const UNREADABLE = '[Unreadable]';
+
 /**
  * Returns a copy of `value` with the secrets masked, wherever they are in it. The original is never
  * changed, which matters as a request log refers to the live request, headers and session.
@@ -171,18 +175,36 @@ function redact (value, options = {}) {
         // Buffers, dates, errors and the like are not containers of named values
         if (type !== '[object Object]') return v;
         // Honour toJSON, as what is logged will be serialised anyway (dates, ids, documents)
-        if (typeof v.toJSON === 'function') {
-            const json = v.toJSON();
-            if (json !== v) return walk(json, depth + 1, path);
+        try {
+            if (typeof v.toJSON === 'function') {
+                const json = v.toJSON();
+                if (json !== v) return walk(json, depth + 1, path);
+            }
+        } catch {
+            return UNSERIALIZABLE;
         }
 
+        let keys;
+        try {
+            keys = Object.keys(v);
+        } catch {
+            return UNREADABLE;
+        }
         const copy = {};
         seen.set(v, copy);
-        for (const key of Object.keys(v)) {
+        for (const key of keys) {
             const keyPath = omitted ? (path ? `${path}.${key}` : key) : '';
             if (omitted && omitted(keyPath)) continue;
-            copy[key] = keyTests.some(test => test(key, v[key])) ?
-                placeholder : walk(v[key], depth + 1, keyPath);
+            // a getter may throw: that part is lost, not the whole log
+            let item;
+            try {
+                item = v[key];
+            } catch {
+                copy[key] = UNREADABLE;
+                continue;
+            }
+            copy[key] = keyTests.some(test => test(key, item)) ?
+                placeholder : walk(item, depth + 1, keyPath);
         }
         return copy;
     }
@@ -191,6 +213,35 @@ function redact (value, options = {}) {
 }
 
 function format (req, res, options = {}) {
+    // A log that cannot be formatted must not take the request down: it is written from callbacks
+    // (such as when a response has finished) where an error is not caught by anyone.
+    try {
+        return formatLog(req, res, options);
+    } catch (err) {
+        return failed(req, res, err, options);
+    }
+}
+
+// What is logged when formatting failed: little, and nothing that has not been through the masking
+function failed (req, res, err, options) {
+    const read = (get) => {
+        try {
+            return get();
+        } catch {
+            return undefined;
+        }
+    };
+    const { placeholder = PLACEHOLDER } = options.mask || {};
+    const text = (value) => typeof value === 'string' ? redactString(value, { auto: true, placeholder }) : value;
+    return {
+        method: read(() => req.method),
+        url: text(read(() => req.originalUrl ?? req.url)),
+        status: read(() => res.statusCode),
+        formatError: String(err && err.message)
+    };
+}
+
+function formatLog (req, res, options) {
     const { maxBodyLen = 10_000 } = options;
 
     const log = {

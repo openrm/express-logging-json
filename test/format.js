@@ -245,3 +245,42 @@ describe('format() with omit', function () {
             .then(done, done);
     });
 });
+
+describe('format() that fails', function () {
+    // `extra` holds getters that throw: copy their descriptors, as spreading would call them
+    function fakeRequest (extra = {}) {
+        const req = {
+            ip: '1', ips: [], hostname: 'h', protocol: 'http', httpVersion: '1.1', method: 'GET',
+            url: '/file?signature=abcdef123456&page=2', path: '/file', fresh: false, subdomains: [], xhr: false,
+            connection: {}, headers: {}, query: {}, params: {}, header () {}
+        };
+        return Object.defineProperties(req, Object.getOwnPropertyDescriptors(extra));
+    }
+    const response = { statusCode: 200, locals: {}, getHeaders () { return {}; } };
+
+    it('should not throw, and return little, masked, with the reason', function () {
+        const req = fakeRequest({ get session () { throw new Error('session getter'); } });
+        const log = format(req, response, { mask: { auto: true } });
+        assert.deepStrictEqual(log, {
+            method: 'GET',
+            url: '/file?signature=[Filtered]&page=2',
+            status: 200,
+            formatError: 'session getter'
+        });
+    });
+
+    it('should not throw when even the basics cannot be read', function () {
+        const req = fakeRequest({ get method () { throw new Error('method'); }, get url () { throw new Error('url'); } });
+        const log = format(req, response);
+        assert.strictEqual(log.method, undefined);
+        assert.strictEqual(log.url, undefined);
+        assert.strictEqual(log.status, 200);
+        assert.strictEqual(typeof log.formatError, 'string');
+    });
+
+    it('should use the placeholder given in the fallback too', function () {
+        const req = fakeRequest({ get session () { throw new Error('x'); } });
+        const log = format(req, response, { mask: { auto: true, placeholder: '***' } });
+        assert.strictEqual(log.url, '/file?signature=***&page=2');
+    });
+});
