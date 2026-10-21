@@ -253,6 +253,31 @@ describe('redact()', function () {
             assert.deepStrictEqual(masked.doc, { password: '[Filtered]', n: 1 });
         });
 
+        it('should never throw: a part that cannot be copied is replaced', function () {
+            const getter = { a: 1 };
+            Object.defineProperty(getter, 'b', { enumerable: true, get () { throw new Error('getter'); } });
+            const toJsonGetter = {};
+            Object.defineProperty(toJsonGetter, 'toJSON', { get () { throw new Error('toJSON getter'); } });
+
+            const masked = redact({
+                password: 'x',
+                throwsInToJSON: { toJSON () { throw new Error('toJSON'); } },
+                throwsInGetter: getter,
+                throwsReadingToJSON: toJsonGetter,
+                hostileProxy: new Proxy({}, { ownKeys () { throw new Error('proxy'); } }),
+                ok: 'fine'
+            }, { auto: true });
+
+            assert.deepStrictEqual(masked, {
+                password: '[Filtered]',
+                throwsInToJSON: '[Unserializable]',
+                throwsInGetter: { a: 1, b: '[Unreadable]' },
+                throwsReadingToJSON: '[Unserializable]',
+                hostileProxy: '[Unreadable]',
+                ok: 'fine'
+            });
+        });
+
         it('should stop at an absurd depth rather than overflow', function () {
             let deep = { password: 'x' };
             for (let i = 0; i < 100; i++) deep = { deep };
